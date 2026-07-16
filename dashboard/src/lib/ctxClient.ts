@@ -45,6 +45,8 @@ import type {
   SkillConfirmResponse,
   SkillContextRequest,
   SkillContextResponse,
+  SkillExportRequest,
+  SkillExportResponse,
   SkillMdRequest,
   SkillMdResponse,
   SkillToolsRequest,
@@ -194,6 +196,8 @@ export const ctx = {
   updateSkill: (req: SkillUpdateRequest) => put<SkillUpdateResponse>("/skill", req),
   confirmSkill: (req: SkillConfirmRequest) =>
     post<SkillConfirmResponse>("/skill/confirm", req),
+  exportSkill: (req: SkillExportRequest) =>
+    post<SkillExportResponse>("/skill/export", req),
   envVault: {
     items: () => get<EnvVaultItemsResponse>("/env-vault/items"),
     upsert: (req: EnvVaultUpsertRequest) =>

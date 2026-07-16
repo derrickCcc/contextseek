@@ -25,7 +25,7 @@ try:
     from fastapi import FastAPI, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.staticfiles import StaticFiles
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel, Field, field_validator
     from starlette.exceptions import HTTPException as StarletteHTTPException
 except ImportError as exc:
     msg = (
@@ -173,6 +173,29 @@ class SkillConfirmRequest(BaseModel):
     item_id: str
 
 
+class SkillExportRequest(BaseModel):
+    scope: str
+    out_dir: str
+    item_ids: list[str] | None = None
+    conflict_strategy: str = "rename"
+    require_confirmed: bool = True
+    spec: str = "hermes"
+
+    @field_validator("conflict_strategy")
+    @classmethod
+    def validate_conflict_strategy(cls, v: str) -> str:
+        if v not in ("overwrite", "skip", "rename"):
+            raise ValueError("conflict_strategy must be 'overwrite', 'skip', or 'rename'")
+        return v
+
+    @field_validator("spec")
+    @classmethod
+    def validate_spec(cls, v: str) -> str:
+        if v not in ("hermes", "agent"):
+            raise ValueError("spec must be 'hermes' or 'agent'")
+        return v
+
+
 class PlugInstallRequest(BaseModel):
     linker: str
     dry_run: bool = False
@@ -195,6 +218,7 @@ _API_ROOT_SEGMENTS: set[str] = {
     "skill_tools",
     "skill_context",
     "skill_md",
+    "skill",
     "items",
     "overview",
     "global_overview",
@@ -1283,6 +1307,36 @@ def create_app(client: ContextSeek | None = None) -> FastAPI:
         return {
             "item": serialize_context_item(updated),
             "status": "confirmed",
+        }
+
+    @app.post("/skill/export")
+    async def export_skill(req: SkillExportRequest) -> dict[str, Any]:
+        """Export confirmed skills as SKILL.md files to a target directory."""
+        from contextseek.daemon.skill_export import export_skills
+
+        try:
+            report = export_skills(
+                ctx,
+                scope=req.scope,
+                out_dir=req.out_dir,
+                item_ids=req.item_ids,
+                conflict_strategy=req.conflict_strategy,
+                require_confirmed=req.require_confirmed,
+                spec=req.spec,
+                prune=False,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return {
+            "written": report.written,
+            "unchanged": report.unchanged,
+            "skipped_low_confidence": report.skipped_low_confidence,
+            "skipped_unpublishable": report.skipped_unpublishable,
+            "skipped_unconfirmed": report.skipped_unconfirmed,
+            "skipped_conflict": report.skipped_conflict,
+            "out_dir": report.out_dir,
         }
 
     @app.post("/items")

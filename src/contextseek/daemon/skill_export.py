@@ -41,6 +41,8 @@ class ExportReport:
     pruned: int = 0
     skipped_low_confidence: int = 0
     skipped_unpublishable: int = 0
+    skipped_unconfirmed: int = 0
+    skipped_conflict: int = 0
     out_dir: str = ""
 
 
@@ -73,6 +75,9 @@ def export_skills(
     dry_run: bool = False,
     prune: bool = True,
     spec: str = "hermes",
+    item_ids: list[str] | None = None,
+    conflict_strategy: str = "rename",
+    require_confirmed: bool = False,
 ) -> ExportReport:
     """Write prompt skills in *scope* to ``out_dir/<slug>/SKILL.md``.
 
@@ -80,6 +85,20 @@ def export_skills(
     frontmatter with version/tags) or ``"agent"`` (strict Anthropic Agent
     Skills frontmatter; point ``out_dir`` at ``.claude/skills/`` to land
     directly into a Claude Code / claude.ai skills directory).
+
+    ``item_ids`` — when provided, only skills whose item id is in this list
+    are exported.  Selective export disables pruning automatically so that
+    other previously-exported skills are not removed.
+
+    ``conflict_strategy`` controls how an *external* (non-manifest) SKILL.md
+    in the target directory is handled: ``"overwrite"`` replaces it,
+    ``"skip"`` leaves it untouched, ``"rename"`` writes to a disambiguated
+    slug directory instead.
+
+    ``require_confirmed`` — when True, skills that have not been
+    human-confirmed (``content["status"] != "confirmed"`` and
+    ``provenance.verified is not True``) are skipped and counted in
+    ``skipped_unconfirmed``.
 
     Idempotent: keyed by the skill's stable ``skill_id`` (falling back to the
     item id for legacy skills), a SKILL.md whose content is unchanged is left
@@ -90,6 +109,16 @@ def export_skills(
     base = pathlib.Path(out_dir).expanduser()
     report = ExportReport(out_dir=str(base))
     exporter = SkillExporter()
+
+    # Validate conflict_strategy.
+    if conflict_strategy not in ("overwrite", "skip", "rename"):
+        raise ValueError(
+            f"conflict_strategy must be 'overwrite', 'skip', or 'rename', got '{conflict_strategy}'"
+        )
+
+    # Selective export disables prune so other skills are preserved.
+    if item_ids is not None:
+        prune = False
 
     def persist_item(item: Any) -> None:
         """Best-effort persistence for clients that expose adapter+resolver."""
@@ -114,6 +143,10 @@ def export_skills(
     skills = ctx.skills(scope, skill_type="prompt")
     selected = []
     for item in skills:
+        # Selective export: only items in the provided id set.
+        if item_ids is not None and item.id not in item_ids:
+            continue
+
         if item.provenance.confidence < min_confidence:
             report.skipped_low_confidence += 1
             continue
@@ -121,7 +154,16 @@ def export_skills(
         if ir.publish_status == "deprecated" or "needs_review" in item.tags:
             report.skipped_unpublishable += 1
             continue
-        # Quality-gate/render-check passed by this point → at least validated.
+        # Require human confirmation if requested.
+        if require_confirmed:
+            content_status = ""
+            if isinstance(item.content, dict):
+                content_status = item.content.get("status", "")
+            is_confirmed = content_status == "confirmed" or item.provenance.verified
+            if not is_confirmed:
+                report.skipped_unconfirmed += 1
+                continue
+        # Quality-gate/render-check passed by this point -> at least validated.
         if can_transition(ir.publish_status, "validated"):
             ir.publish_status = "validated"
             item.content = ir.to_content()
@@ -145,7 +187,6 @@ def export_skills(
         key = SkillIR.from_content(item.content).skill_id or item.id
         md = render(item)
         digest = _content_hash(md)
-        new_manifest[key] = {"slug": slug, "hash": digest}
 
         skill_file = base / slug / "SKILL.md"
         prev = old_manifest.get(key)
@@ -160,8 +201,35 @@ def export_skills(
                 ir.publish_status = "published"
                 item.content = ir.to_content()
                 persist_item(item)
+            new_manifest[key] = {"slug": slug, "hash": digest}
             report.unchanged += 1
             continue
+
+        # Conflict detection: file exists but is NOT in our manifest (external).
+        external_conflict = skill_file.exists() and prev is None
+        if external_conflict:
+            if conflict_strategy == "skip":
+                report.skipped_conflict += 1
+                continue
+            elif conflict_strategy == "rename":
+                # Find a disambiguated slug that doesn't collide.
+                base_slug = slug
+                suffix = item.id[8:16] if len(item.id) >= 16 else item.id[:8]
+                candidate = f"{base_slug}-{suffix}"
+                idx = 0
+                while candidate in used_slugs or (base / candidate / "SKILL.md").exists():
+                    candidate = f"{base_slug}-{suffix}-{idx}"
+                    idx += 1
+                    if idx > 999:
+                        # Safety valve: extremely unlikely to reach here.
+                        candidate = f"{base_slug}-{suffix}-{item.id}"
+                        break
+                slug = candidate
+                used_slugs.add(slug)
+                skill_file = base / slug / "SKILL.md"
+            # else: overwrite -- fall through to normal write
+
+        new_manifest[key] = {"slug": slug, "hash": digest}
 
         if not dry_run:
             skill_file.parent.mkdir(parents=True, exist_ok=True)

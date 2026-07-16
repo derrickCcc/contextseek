@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -13,11 +13,25 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useScope } from "@/context/ScopeContext";
 import { ctx } from "@/lib/ctxClient";
 import { useI18n } from "@/lib/i18n";
-import type { ContextItem, SkillStatus } from "@/lib/types";
+import { isNativeDialogAvailable, openDirectory } from "@/lib/tauriDialog";
+import { errorMessage } from "@/lib/utils";
+import type {
+  ContextItem,
+  SkillConflictStrategy,
+  SkillExportResponse,
+  SkillStatus,
+} from "@/lib/types";
 
 function triggerDownload(filename: string, content: string, mimeType = "application/json") {
   const blob = new Blob([content], { type: mimeType });
@@ -466,6 +480,330 @@ function SkillDetailDialog({
   );
 }
 
+// --- Skill export dialog ---
+
+const SKILL_EXPORT_DIR_KEY = "ctx.skillExportDir";
+const QUICK_TARGETS: { key: string; path: string }[] = [
+  { key: "skills.export.target.user", path: "~/.contextseek/skills" },
+  { key: "skills.export.target.project", path: ".claude/skills" },
+  { key: "skills.export.target.codex", path: "~/.codex/skills" },
+  { key: "skills.export.target.cursor", path: "~/.cursor/skills" },
+];
+
+function SkillExportDialog({
+  open,
+  onClose,
+  items,
+  scope,
+}: {
+  open: boolean;
+  onClose: () => void;
+  items: ContextItem[];
+  scope: string;
+}) {
+  const { t } = useI18n();
+  const nativeDialog = isNativeDialogAvailable();
+
+  const confirmedItems = useMemo(
+    () => items.filter((it) => getSkillStatus(it) === "confirmed"),
+    [items],
+  );
+
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [outDir, setOutDir] = useState("");
+  const [conflictStrategy, setConflictStrategy] =
+    useState<SkillConflictStrategy>("rename");
+  const [spec, setSpec] = useState("hermes");
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<SkillExportResponse | null>(
+    null,
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  // Initialise when dialog opens.
+  useEffect(() => {
+    if (open) {
+      const saved = window.localStorage.getItem(SKILL_EXPORT_DIR_KEY) ?? "";
+      setOutDir(saved);
+      setSelectedIds(new Set(confirmedItems.map((it) => it.id)));
+      setError(null);
+      setExportResult(null);
+    }
+  }, [open, confirmedItems]);
+
+  function toggleItem(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handlePickDir() {
+    const picked = await openDirectory({ defaultPath: outDir || undefined });
+    if (picked) setOutDir(picked);
+  }
+
+  async function handleExport() {
+    const trimmedDir = outDir.trim();
+    if (selectedIds.size === 0 || !trimmedDir) return;
+    setExporting(true);
+    setError(null);
+    setExportResult(null);
+    window.localStorage.setItem(SKILL_EXPORT_DIR_KEY, trimmedDir);
+    try {
+      const res = await ctx.exportSkill({
+        scope,
+        out_dir: trimmedDir,
+        item_ids: Array.from(selectedIds),
+        conflict_strategy: conflictStrategy,
+        require_confirmed: true,
+        spec,
+      });
+      setExportResult(res);
+    } catch (e) {
+      setError(errorMessage(e) || t("skills.export.error"));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const hasConfirmed = confirmedItems.length > 0;
+  const recentDir = window.localStorage.getItem(SKILL_EXPORT_DIR_KEY) ?? "";
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-xl max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden">
+        {/* Header */}
+        <div className="px-6 pt-6 pb-4 border-b shrink-0">
+          <DialogHeader>
+            <DialogTitle className="leading-snug">
+              {t("skills.export.title")}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+            {t("skills.export.desc")}
+          </p>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
+          {/* Skill selection list */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              {t("skills.distilled")}
+            </Label>
+            {hasConfirmed ? (
+              <div className="max-h-48 overflow-y-auto rounded-md border space-y-0.5 p-1">
+                {confirmedItems.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => toggleItem(item.id)}
+                    className={`w-full flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted transition-colors ${
+                      selectedIds.has(item.id) ? "bg-muted" : ""
+                    }`}
+                  >
+                    <span
+                      className={`inline-flex items-center justify-center w-4 h-4 rounded border shrink-0 ${
+                        selectedIds.has(item.id)
+                          ? "bg-primary border-primary text-primary-foreground"
+                          : "border-muted-foreground/30"
+                      }`}
+                    >
+                      {selectedIds.has(item.id) && (
+                        <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none">
+                          <path d="M2 6l3 3 5-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </span>
+                    <StatusDot status={getSkillStatus(item)} />
+                    <span className="truncate flex-1">
+                      {getSkillName(item)}
+                    </span>
+                  </button>
+                ))}
+                {items.length > confirmedItems.length && (
+                  <p className="text-xs text-muted-foreground px-2 py-1.5">
+                    {t("skills.export.needConfirm")}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground px-2 py-2">
+                {t("skills.export.noConfirmed")}
+              </p>
+            )}
+          </div>
+
+          {/* Quick targets */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              {t("skills.export.quickTargets")}
+            </Label>
+            <div className="flex flex-wrap gap-2">
+              {QUICK_TARGETS.map((target) => (
+                <Button
+                  key={target.key}
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-7"
+                  onClick={() => setOutDir(target.path)}
+                >
+                  {t(target.key)}
+                </Button>
+              ))}
+              {recentDir && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-7"
+                  onClick={() => setOutDir(recentDir)}
+                >
+                  {t("skills.export.target.recent")}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Target directory input */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              {t("skills.export.targetDir")}
+            </Label>
+            <div className="flex gap-2">
+              <Input
+                value={outDir}
+                onChange={(e) => setOutDir(e.target.value)}
+                placeholder={t("skills.export.dirPlaceholder")}
+                className="font-mono text-xs flex-1"
+              />
+              {nativeDialog && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void handlePickDir()}
+                  className="shrink-0"
+                >
+                  {t("skills.export.pickDir")}
+                </Button>
+              )}
+            </div>
+            {!nativeDialog && (
+              <p className="text-xs text-muted-foreground">
+                {t("skills.export.manualHint")}
+              </p>
+            )}
+          </div>
+
+          {/* Conflict strategy + format */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                {t("skills.export.conflictStrategy")}
+              </Label>
+              <Select
+                value={conflictStrategy}
+                onValueChange={(v) =>
+                  setConflictStrategy(v as SkillConflictStrategy)
+                }
+              >
+                <SelectTrigger className="text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="rename">
+                    {t("skills.export.conflict.rename")}
+                  </SelectItem>
+                  <SelectItem value="overwrite">
+                    {t("skills.export.conflict.overwrite")}
+                  </SelectItem>
+                  <SelectItem value="skip">
+                    {t("skills.export.conflict.skip")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                {t("skills.export.conflict.hint")}
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                {t("skills.export.spec")}
+              </Label>
+              <Select value={spec} onValueChange={setSpec}>
+                <SelectTrigger className="text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="hermes">
+                    {t("skills.export.spec.hermes")}
+                  </SelectItem>
+                  <SelectItem value="agent">
+                    {t("skills.export.spec.agent")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+
+        {/* Error message */}
+        {error && (
+          <div className="px-6 py-2 bg-red-50 border-t shrink-0">
+            <p className="text-xs text-red-600">{error}</p>
+          </div>
+        )}
+
+        {/* Success message */}
+        {exportResult && (
+          <div className="px-6 py-2 bg-emerald-50 border-t shrink-0 space-y-1">
+            <p className="text-xs text-emerald-700">
+              {t("skills.export.success", {
+                path: exportResult.out_dir,
+                written: exportResult.written,
+              })}
+            </p>
+            {exportResult.skipped_unconfirmed > 0 && (
+              <p className="text-xs text-amber-600">
+                {t("skills.export.skipped", {
+                  n: exportResult.skipped_unconfirmed,
+                })}
+              </p>
+            )}
+            {exportResult.skipped_conflict > 0 && (
+              <p className="text-xs text-amber-600">
+                {t("skills.export.conflict.skip")}: {exportResult.skipped_conflict}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Action footer */}
+        <DialogFooter className="px-6 py-3 border-t shrink-0 flex-row justify-end gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onClose}
+            disabled={exporting}
+          >
+            {t("skills.detail.cancel")}
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => void handleExport()}
+            disabled={exporting || selectedIds.size === 0 || !outDir.trim()}
+          >
+            {exporting
+              ? t("skills.export.exporting")
+              : t("skills.export.submit")}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function getSkillName(item: ContextItem): string {
   if (item.content && typeof item.content === "object") {
     return (item.content as Record<string, unknown>).name as string || item.summary || item.id.slice(0, 8);
@@ -553,6 +891,7 @@ export function SkillsPanel() {
   const [loading, setLoading] = useState(true);
   const [selectedItem, setSelectedItem] = useState<ContextItem | null>(null);
   const [downloadingMd, setDownloadingMd] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -616,6 +955,13 @@ export function SkillsPanel() {
         onItemUpdated={handleItemUpdated}
       />
 
+      <SkillExportDialog
+        open={exportDialogOpen}
+        onClose={() => setExportDialogOpen(false)}
+        items={items}
+        scope={scope}
+      />
+
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Skills list */}
         <div className="space-y-4 lg:col-span-2">
@@ -658,6 +1004,15 @@ export function SkillsPanel() {
                 className="w-full text-xs"
               >
                 {t("skills.export.download")}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!hasSkills}
+                onClick={() => setExportDialogOpen(true)}
+                className="w-full text-xs"
+              >
+                {t("skills.export.toDir")}
               </Button>
             </div>
           </SectionCard>

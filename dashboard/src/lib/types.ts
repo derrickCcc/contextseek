@@ -518,6 +518,27 @@ export interface SkillConfirmResponse {
   status: "confirmed";
 }
 
+export type SkillConflictStrategy = "overwrite" | "skip" | "rename";
+
+export interface SkillExportRequest {
+  scope: string;
+  out_dir: string;
+  item_ids?: string[] | null;
+  conflict_strategy?: SkillConflictStrategy;
+  require_confirmed?: boolean;
+  spec?: string;
+}
+
+export interface SkillExportResponse {
+  written: number;
+  unchanged: number;
+  skipped_low_confidence: number;
+  skipped_unpublishable: number;
+  skipped_unconfirmed: number;
+  skipped_conflict: number;
+  out_dir: string;
+}
+
 // --- Env Vault ---
 
 export interface EnvVaultItem {

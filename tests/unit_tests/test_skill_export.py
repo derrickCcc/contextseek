@@ -232,3 +232,161 @@ def test_export_advances_publish_status_to_published(tmp_path: pathlib.Path) -> 
 
     stored = deserialize_context_item(ctx.adapter.read(ref))
     assert SkillIR.from_content(stored.content).publish_status == "published"
+
+
+# ---------------------------------------------------------------------------
+# Tests for selective export, conflict strategy, and confirmation gate
+# ---------------------------------------------------------------------------
+
+
+def test_export_selected_item_ids_only(tmp_path: pathlib.Path) -> None:
+    a = _skill("Alpha Skill")
+    b = _skill("Beta Skill")
+    c = _skill("Gamma Skill")
+    ctx = _StubClient([a, b, c])
+
+    report = export_skills(
+        ctx,
+        scope="me/work",
+        out_dir=tmp_path,
+        item_ids=[a.id, c.id],
+    )
+    assert report.written == 2
+    assert (tmp_path / "alpha-skill" / "SKILL.md").exists()
+    assert not (tmp_path / "beta-skill").exists()
+    assert (tmp_path / "gamma-skill" / "SKILL.md").exists()
+
+
+def test_export_require_confirmed_skips_unconfirmed(tmp_path: pathlib.Path) -> None:
+    unconfirmed = _skill("Unconfirmed", confidence=0.9)
+    confirmed = _skill("Confirmed", confidence=0.9, content={
+        "skill_type": "prompt",
+        "name": "Confirmed",
+        "description": "Confirmed description",
+        "version": "1.0.0",
+        "tags": ["alpha"],
+        "body": "do stuff",
+        "status": "confirmed",
+    })
+
+    ctx = _StubClient([unconfirmed, confirmed])
+    report = export_skills(
+        ctx,
+        scope="me/work",
+        out_dir=tmp_path,
+        require_confirmed=True,
+    )
+    assert report.skipped_unconfirmed == 1
+    assert report.written == 1
+    assert (tmp_path / "confirmed" / "SKILL.md").exists()
+    assert not (tmp_path / "unconfirmed").exists()
+
+
+def test_conflict_strategy_skip(tmp_path: pathlib.Path) -> None:
+    # Pre-create an external (non-manifest) SKILL.md in the target directory.
+    ext_dir = tmp_path / "alpha-skill"
+    ext_dir.mkdir(parents=True)
+    (ext_dir / "SKILL.md").write_text("# hand-written\n\nmanual content", encoding="utf-8")
+
+    ctx = _StubClient([_skill("Alpha Skill")])
+    report = export_skills(
+        ctx,
+        scope="me/work",
+        out_dir=tmp_path,
+        conflict_strategy="skip",
+    )
+    assert report.skipped_conflict == 1
+    assert report.written == 0
+    # External file untouched.
+    assert (ext_dir / "SKILL.md").read_text(encoding="utf-8").startswith("# hand-written")
+
+
+def test_conflict_strategy_overwrite(tmp_path: pathlib.Path) -> None:
+    ext_dir = tmp_path / "alpha-skill"
+    ext_dir.mkdir(parents=True)
+    original = "# hand-written\n\nmanual content"
+    (ext_dir / "SKILL.md").write_text(original, encoding="utf-8")
+
+    ctx = _StubClient([_skill("Alpha Skill")])
+    report = export_skills(
+        ctx,
+        scope="me/work",
+        out_dir=tmp_path,
+        conflict_strategy="overwrite",
+    )
+    assert report.written == 1
+    assert report.skipped_conflict == 0
+    content = (ext_dir / "SKILL.md").read_text(encoding="utf-8")
+    assert content.startswith("---")
+    assert "Alpha Skill" in content
+
+
+def test_conflict_strategy_rename(tmp_path: pathlib.Path) -> None:
+    ext_dir = tmp_path / "alpha-skill"
+    ext_dir.mkdir(parents=True)
+    original = "# hand-written\n\nmanual content"
+    (ext_dir / "SKILL.md").write_text(original, encoding="utf-8")
+
+    skill = _skill("Alpha Skill")
+    ctx = _StubClient([skill])
+    report = export_skills(
+        ctx,
+        scope="me/work",
+        out_dir=tmp_path,
+        conflict_strategy="rename",
+    )
+    assert report.written == 1
+    assert report.skipped_conflict == 0
+    # External file untouched.
+    assert (ext_dir / "SKILL.md").read_text(encoding="utf-8") == original
+    # New file written to a renamed slug directory.
+    suffix = skill.id[8:16] if len(skill.id) >= 16 else skill.id[:8]
+    renamed_dir = tmp_path / f"alpha-skill-{suffix}"
+    assert (renamed_dir / "SKILL.md").exists()
+    assert (renamed_dir / "SKILL.md").read_text(encoding="utf-8").startswith("---")
+
+
+def test_export_with_item_ids_disables_prune(tmp_path: pathlib.Path) -> None:
+    skill_a = _skill("Alpha")
+    skill_b = _skill("Beta")
+    # Initial full export writes both.
+    export_skills(_StubClient([skill_a, skill_b]), scope="me/work", out_dir=tmp_path)
+    assert (tmp_path / "alpha" / "SKILL.md").exists()
+    assert (tmp_path / "beta" / "SKILL.md").exists()
+
+    # Selective export of only Alpha — Beta must NOT be pruned.
+    report = export_skills(
+        _StubClient([skill_a, skill_b]),
+        scope="me/work",
+        out_dir=tmp_path,
+        item_ids=[skill_a.id],
+    )
+    assert report.pruned == 0
+    assert (tmp_path / "alpha" / "SKILL.md").exists()
+    assert (tmp_path / "beta" / "SKILL.md").exists()
+
+
+def test_export_invalid_conflict_strategy_raises(tmp_path: pathlib.Path) -> None:
+    import pytest
+
+    ctx = _StubClient([_skill("Alpha")])
+    with pytest.raises(ValueError, match="conflict_strategy"):
+        export_skills(
+            ctx,
+            scope="me/work",
+            out_dir=tmp_path,
+            conflict_strategy="bogus",
+        )
+
+
+def test_export_empty_item_ids_exports_nothing(tmp_path: pathlib.Path) -> None:
+    ctx = _StubClient([_skill("Alpha"), _skill("Beta")])
+    report = export_skills(
+        ctx,
+        scope="me/work",
+        out_dir=tmp_path,
+        item_ids=[],
+    )
+    assert report.written == 0
+    assert not (tmp_path / "alpha").exists()
+    assert not (tmp_path / "beta").exists()

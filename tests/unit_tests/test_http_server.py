@@ -797,6 +797,119 @@ def test_http_confirm_skill_not_found() -> None:
     assert "skill not found" in res.json()["detail"]
 
 
+def test_http_skill_export_success(tmp_path) -> None:
+    from contextseek.daemon.skill_export import ExportReport
+
+    ctx = MagicMock(name="ContextSeek")
+    report = ExportReport(written=2, unchanged=0, out_dir=str(tmp_path))
+    ctx.skills.return_value = []
+
+    import contextseek.daemon.skill_export as se_mod
+
+    original_fn = se_mod.export_skills
+    se_mod.export_skills = lambda *args, **kwargs: report
+    try:
+        app = create_app(client=ctx)
+        res = _asgi_post(
+            app,
+            "/skill/export",
+            json={
+                "scope": "contextseek",
+                "out_dir": str(tmp_path),
+                "item_ids": ["skill-001", "skill-002"],
+                "conflict_strategy": "rename",
+                "require_confirmed": True,
+                "spec": "hermes",
+            },
+        )
+    finally:
+        se_mod.export_skills = original_fn
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["written"] == 2
+    assert body["out_dir"] == str(tmp_path)
+    assert body["skipped_unconfirmed"] == 0
+
+
+def test_http_skill_export_require_confirmed(tmp_path) -> None:
+    from contextseek.daemon.skill_export import ExportReport
+
+    ctx = MagicMock(name="ContextSeek")
+    report = ExportReport(
+        written=1, skipped_unconfirmed=1, out_dir=str(tmp_path)
+    )
+
+    import contextseek.daemon.skill_export as se_mod
+
+    original_fn = se_mod.export_skills
+    se_mod.export_skills = lambda *args, **kwargs: report
+    try:
+        app = create_app(client=ctx)
+        res = _asgi_post(
+            app,
+            "/skill/export",
+            json={
+                "scope": "contextseek",
+                "out_dir": str(tmp_path),
+                "require_confirmed": True,
+            },
+        )
+    finally:
+        se_mod.export_skills = original_fn
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["skipped_unconfirmed"] == 1
+    assert body["written"] == 1
+
+
+def test_http_skill_export_error_returns_500(tmp_path) -> None:
+    ctx = MagicMock(name="ContextSeek")
+    ctx.skills.side_effect = RuntimeError("internal error")
+    app = create_app(client=ctx)
+
+    res = _asgi_post(
+        app,
+        "/skill/export",
+        json={"scope": "contextseek", "out_dir": str(tmp_path)},
+    )
+    assert res.status_code == 500
+    assert "internal error" in res.json()["detail"]
+
+
+def test_http_skill_export_invalid_conflict_strategy(tmp_path) -> None:
+    ctx = MagicMock(name="ContextSeek")
+    app = create_app(client=ctx)
+
+    res = _asgi_post(
+        app,
+        "/skill/export",
+        json={
+            "scope": "contextseek",
+            "out_dir": str(tmp_path),
+            "conflict_strategy": "invalid",
+        },
+    )
+    assert res.status_code == 422  # Pydantic validation error
+
+
+def test_http_skill_export_invalid_spec(tmp_path) -> None:
+    ctx = MagicMock(name="ContextSeek")
+    app = create_app(client=ctx)
+
+    res = _asgi_post(
+        app,
+        "/skill/export",
+        json={
+            "scope": "contextseek",
+            "out_dir": str(tmp_path),
+            "spec": "invalid",
+        },
+    )
+    assert res.status_code == 422  # Pydantic validation error
+
+
 def test_http_plug_status_refresh_detects_missing_targets_for_all_linkers(
     monkeypatch,
     tmp_path,
