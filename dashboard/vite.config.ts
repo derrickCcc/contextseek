@@ -8,7 +8,7 @@ import { defineConfig } from "vite";
 // that both `vite dev` and `vite preview` work without setting VITE_CTX_BASE.
 const API_SEGMENTS =
   "add|retrieve|expand|forget|delete|compact|dream|feedback|upstream|" +
-  "evidence_chain|chain_confidence|skill_tools|skill_context|skill_md|items|" +
+  "evidence_chain|chain_confidence|skill_tools|skill_context|skill_md|skill|items|" +
   "overview|global_overview|scopes|config|metrics|plugs|seed|health|install|restart|__desktop";
 const API_PROXY_PATTERN = `^/(${API_SEGMENTS})(/|$|\\?)`;
 const API_PROXY_TARGET = { target: "http://127.0.0.1:8000", changeOrigin: true };

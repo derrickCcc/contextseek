@@ -668,6 +668,135 @@ def test_http_plug_status_refresh_classifies_missing_target(
     assert status.json()["entries"] == job["entries"]
 
 
+# ─── Skill editing & confirmation (Issue #40) ────────────────────────────────
+
+
+def _sample_skill_item(
+    *,
+    item_id: str = "skill-001",
+    content: dict | str | None = None,
+    verified: bool = False,
+    confidence: float = 0.7,
+) -> ContextItem:
+    from contextseek.domain.stages import Stage
+
+    if content is None:
+        content = {
+            "skill_type": "prompt",
+            "kind": "prompt",
+            "name": "Memory Optimization",
+            "description": "Agent memory optimization skill",
+            "body": "Always call ctx.retrieve before LLM calls.",
+            "version": "1.0.0",
+            "tags": ["memory", "best-practice"],
+            "parameters": {},
+            "skill_id": "sk_abc123",
+            "source_fingerprint": "fp_test",
+            "publish_status": "drafted",
+        }
+    return ContextItem(
+        id=item_id,
+        scope="contextseek",
+        content=content,
+        stage=Stage.skill,
+        provenance=Provenance(
+            source_type="distillation",
+            source_id="distillation-pipeline",
+            confidence=confidence,
+            verified=verified,
+        ),
+        tags=["技能", "记忆"],
+    )
+
+
+def test_http_update_skill_returns_updated_item() -> None:
+    ctx = MagicMock(name="ContextSeek")
+    base_content = _sample_skill_item().content  # type: ignore[assignment]
+    updated = _sample_skill_item(
+        content={
+            **base_content,  # type: ignore[dict-item]
+            "name": "New Name",
+            "body": "New body text",
+            "status": "edited",
+        },
+    )
+    ctx.update_skill.return_value = updated
+    ctx.skill_status.return_value = "edited"
+    app = create_app(client=ctx)
+
+    res = _asgi_put(
+        app,
+        "/skill",
+        json={
+            "scope": "contextseek",
+            "item_id": "skill-001",
+            "name": "New Name",
+            "body": "New body text",
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "edited"
+    assert body["item"]["content"]["name"] == "New Name"
+    assert body["item"]["content"]["status"] == "edited"
+    ctx.update_skill.assert_called_once()
+
+
+def test_http_update_skill_not_found() -> None:
+    ctx = MagicMock(name="ContextSeek")
+    ctx.update_skill.side_effect = ValueError("skill not found: missing-id")
+    app = create_app(client=ctx)
+
+    res = _asgi_put(
+        app,
+        "/skill",
+        json={"scope": "contextseek", "item_id": "missing-id", "name": "x"},
+    )
+    assert res.status_code == 404
+    assert "skill not found" in res.json()["detail"]
+
+
+def test_http_confirm_skill_returns_confirmed_item() -> None:
+    ctx = MagicMock(name="ContextSeek")
+    base_content = _sample_skill_item().content  # type: ignore[assignment]
+    confirmed = _sample_skill_item(
+        content={
+            **base_content,  # type: ignore[dict-item]
+            "status": "confirmed",
+        },
+        verified=True,
+        confidence=1.0,
+    )
+    ctx.confirm_skill.return_value = confirmed
+    app = create_app(client=ctx)
+
+    res = _asgi_post(
+        app,
+        "/skill/confirm",
+        json={"scope": "contextseek", "item_id": "skill-001"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "confirmed"
+    assert body["item"]["provenance"]["confidence"] == 1.0
+    assert body["item"]["provenance"]["verified"] is True
+    ctx.confirm_skill.assert_called_once()
+
+
+def test_http_confirm_skill_not_found() -> None:
+    ctx = MagicMock(name="ContextSeek")
+    ctx.confirm_skill.side_effect = ValueError("skill not found: missing-id")
+    app = create_app(client=ctx)
+
+    res = _asgi_post(
+        app,
+        "/skill/confirm",
+        json={"scope": "contextseek", "item_id": "missing-id"},
+    )
+    assert res.status_code == 404
+    assert "skill not found" in res.json()["detail"]
+
+
 def test_http_plug_status_refresh_detects_missing_targets_for_all_linkers(
     monkeypatch,
     tmp_path,
@@ -839,3 +968,132 @@ exit 0
     status = _asgi_get(app, "/plugs/powermem")
     assert status.status_code == 200
     assert status.json()["entries"] == job["entries"]
+
+
+# ─── Skill editing & confirmation (Issue #40) ────────────────────────────────
+
+
+def _sample_skill_item(
+    *,
+    item_id: str = "skill-001",
+    content: dict | str | None = None,
+    verified: bool = False,
+    confidence: float = 0.7,
+) -> ContextItem:
+    from contextseek.domain.stages import Stage
+
+    if content is None:
+        content = {
+            "skill_type": "prompt",
+            "kind": "prompt",
+            "name": "Memory Optimization",
+            "description": "Agent memory optimization skill",
+            "body": "Always call ctx.retrieve before LLM calls.",
+            "version": "1.0.0",
+            "tags": ["memory", "best-practice"],
+            "parameters": {},
+            "skill_id": "sk_abc123",
+            "source_fingerprint": "fp_test",
+            "publish_status": "drafted",
+        }
+    return ContextItem(
+        id=item_id,
+        scope="contextseek",
+        content=content,
+        stage=Stage.skill,
+        provenance=Provenance(
+            source_type="distillation",
+            source_id="distillation-pipeline",
+            confidence=confidence,
+            verified=verified,
+        ),
+        tags=["技能", "记忆"],
+    )
+
+
+def test_http_update_skill_returns_updated_item() -> None:
+    ctx = MagicMock(name="ContextSeek")
+    base_content = _sample_skill_item().content  # type: ignore[assignment]
+    updated = _sample_skill_item(
+        content={
+            **base_content,  # type: ignore[dict-item]
+            "name": "New Name",
+            "body": "New body text",
+            "status": "edited",
+        },
+    )
+    ctx.update_skill.return_value = updated
+    ctx.skill_status.return_value = "edited"
+    app = create_app(client=ctx)
+
+    res = _asgi_put(
+        app,
+        "/skill",
+        json={
+            "scope": "contextseek",
+            "item_id": "skill-001",
+            "name": "New Name",
+            "body": "New body text",
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "edited"
+    assert body["item"]["content"]["name"] == "New Name"
+    assert body["item"]["content"]["status"] == "edited"
+    ctx.update_skill.assert_called_once()
+
+
+def test_http_update_skill_not_found() -> None:
+    ctx = MagicMock(name="ContextSeek")
+    ctx.update_skill.side_effect = ValueError("skill not found: missing-id")
+    app = create_app(client=ctx)
+
+    res = _asgi_put(
+        app,
+        "/skill",
+        json={"scope": "contextseek", "item_id": "missing-id", "name": "x"},
+    )
+    assert res.status_code == 404
+    assert "skill not found" in res.json()["detail"]
+
+
+def test_http_confirm_skill_returns_confirmed_item() -> None:
+    ctx = MagicMock(name="ContextSeek")
+    base_content = _sample_skill_item().content  # type: ignore[assignment]
+    confirmed = _sample_skill_item(
+        content={
+            **base_content,  # type: ignore[dict-item]
+            "status": "confirmed",
+        },
+        verified=True,
+        confidence=1.0,
+    )
+    ctx.confirm_skill.return_value = confirmed
+    app = create_app(client=ctx)
+
+    res = _asgi_post(
+        app,
+        "/skill/confirm",
+        json={"scope": "contextseek", "item_id": "skill-001"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "confirmed"
+    assert body["item"]["provenance"]["confidence"] == 1.0
+    assert body["item"]["provenance"]["verified"] is True
+    ctx.confirm_skill.assert_called_once()
+
+
+def test_http_confirm_skill_not_found() -> None:
+    ctx = MagicMock(name="ContextSeek")
+    ctx.confirm_skill.side_effect = ValueError("skill not found: missing-id")
+    app = create_app(client=ctx)
+
+    res = _asgi_post(
+        app,
+        "/skill/confirm",
+        json={"scope": "contextseek", "item_id": "missing-id"},
+    )
+    assert res.status_code == 404
+    assert "skill not found" in res.json()["detail"]

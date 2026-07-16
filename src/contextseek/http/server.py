@@ -158,6 +158,21 @@ class ItemsRequest(BaseModel):
     stage: str | None = None
 
 
+class SkillUpdateRequest(BaseModel):
+    scope: str
+    item_id: str
+    name: str | None = None
+    description: str | None = None
+    body: str | None = None
+    parameters: dict[str, Any] | None = None
+    tags: list[str] | None = None
+
+
+class SkillConfirmRequest(BaseModel):
+    scope: str
+    item_id: str
+
+
 class PlugInstallRequest(BaseModel):
     linker: str
     dry_run: bool = False
@@ -1230,6 +1245,45 @@ def create_app(client: ContextSeek | None = None) -> FastAPI:
             for s in skills
         ]
         return {"skills": result}
+
+    @app.put("/skill")
+    async def update_skill(req: SkillUpdateRequest) -> dict[str, Any]:
+        """Edit a skill's name, description, body, parameters, and tags."""
+        try:
+            updated = ctx.update_skill(
+                scope=req.scope,
+                item_id=req.item_id,
+                name=req.name,
+                description=req.description,
+                body=req.body,
+                parameters=req.parameters,
+                tags=req.tags,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return {
+            "item": serialize_context_item(updated),
+            "status": ctx.skill_status(updated),
+        }
+
+    @app.post("/skill/confirm")
+    async def confirm_skill(req: SkillConfirmRequest) -> dict[str, Any]:
+        """Human-confirm a skill (sets confidence=1.0, verified=True)."""
+        try:
+            updated = ctx.confirm_skill(
+                scope=req.scope,
+                item_id=req.item_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return {
+            "item": serialize_context_item(updated),
+            "status": "confirmed",
+        }
 
     @app.post("/items")
     async def list_items(req: ItemsRequest) -> dict[str, Any]:

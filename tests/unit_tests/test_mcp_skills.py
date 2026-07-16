@@ -215,3 +215,180 @@ class TestSkillFeedbackWriteback:
             r for r in ctx.audit_log.records if r.action == "skill_feedback_ingested"
         ]
         assert ingested and ingested[-1].detail["skill_id"] == tid
+
+
+# ─── Skill editing & human confirmation (Issue #40) ──────────────────────────
+
+
+def _seed_by_item_id(ctx: ContextSeek, ir: SkillIR, *, tags=None) -> str:
+    """Seed a skill and return its ContextItem.id (not skill_id)."""
+    item = ContextItem(
+        id=_generate_id(),
+        content=ir.to_content(),
+        scope=SCOPE,
+        provenance=Provenance(
+            source_type=SourceType.distillation, source_id="k", confidence=0.8
+        ),
+        stage=Stage.skill,
+        tags=tags or [],
+    )
+    ctx.adapter.write(
+        ctx.resolver.ref_for(SCOPE, item.id), serialize_context_item(item)
+    )
+    return item.id
+
+
+def _seed_string_content(ctx: ContextSeek, body: str = "old body") -> str:
+    """Seed a string-content skill and return its ContextItem.id."""
+    item = ContextItem(
+        id=_generate_id(),
+        content=body,
+        scope=SCOPE,
+        provenance=Provenance(
+            source_type=SourceType.distillation, source_id="k", confidence=0.7
+        ),
+        stage=Stage.skill,
+        tags=[],
+    )
+    ctx.adapter.write(
+        ctx.resolver.ref_for(SCOPE, item.id), serialize_context_item(item)
+    )
+    return item.id
+
+
+class TestUpdateSkill:
+    def test_update_dict_content_fields(self):
+        ctx = _ctx()
+        ir = _prompt_skill(name="Old", body="old body")
+        item_id = _seed_by_item_id(ctx, ir)
+
+        updated = ctx.update_skill(
+            scope=SCOPE, item_id=item_id, name="New Name", body="new body"
+        )
+        assert updated.content["name"] == "New Name"
+        assert updated.content["body"] == "new body"
+        assert updated.content["status"] == "edited"
+        assert updated.updated_at is not None
+        # provenance should not change on edit
+        assert updated.provenance.confidence == 0.8
+        assert updated.provenance.verified is False
+
+    def test_update_string_content_upgrades_to_dict(self):
+        ctx = _ctx()
+        item_id = _seed_string_content(ctx, "original body")
+
+        updated = ctx.update_skill(
+            scope=SCOPE, item_id=item_id, name="Upgraded", body="new body"
+        )
+        # Should now be dict content with status
+        assert isinstance(updated.content, dict)
+        assert updated.content["name"] == "Upgraded"
+        assert updated.content["body"] == "new body"
+        assert updated.content["status"] == "edited"
+
+    def test_update_persists_to_storage(self):
+        ctx = _ctx()
+        ir = _prompt_skill(name="Persist", body="v1")
+        item_id = _seed_by_item_id(ctx, ir)
+
+        ctx.update_skill(scope=SCOPE, item_id=item_id, body="v2")
+        # Reload from storage
+        reloaded = ctx._find_skill_by_item_id(SCOPE, item_id)
+        assert reloaded is not None
+        assert reloaded.content["body"] == "v2"
+        assert reloaded.content["status"] == "edited"
+
+    def test_update_unknown_raises(self):
+        ctx = _ctx()
+        with pytest.raises(ValueError):
+            ctx.update_skill(scope=SCOPE, item_id="nope", name="x")
+
+    def test_update_emits_audit_event(self):
+        ctx = _ctx()
+        ir = _prompt_skill(name="Audit", body="b")
+        item_id = _seed_by_item_id(ctx, ir)
+
+        ctx.update_skill(scope=SCOPE, item_id=item_id, name="Audited")
+        actions = {r.action for r in ctx.audit_log.records}
+        assert "skill_updated" in actions
+
+
+class TestConfirmSkill:
+    def test_confirm_sets_confidence_and_verified(self):
+        ctx = _ctx()
+        ir = _prompt_skill(name="Confirm", body="b")
+        item_id = _seed_by_item_id(ctx, ir)
+
+        confirmed = ctx.confirm_skill(scope=SCOPE, item_id=item_id)
+        assert confirmed.provenance.confidence == 1.0
+        assert confirmed.provenance.verified is True
+        assert confirmed.content["status"] == "confirmed"
+
+    def test_confirm_string_content_upgrades(self):
+        ctx = _ctx()
+        item_id = _seed_string_content(ctx)
+
+        confirmed = ctx.confirm_skill(scope=SCOPE, item_id=item_id)
+        assert isinstance(confirmed.content, dict)
+        assert confirmed.content["status"] == "confirmed"
+        assert confirmed.provenance.verified is True
+
+    def test_confirm_persists_to_storage(self):
+        ctx = _ctx()
+        ir = _prompt_skill(name="CPersist", body="b")
+        item_id = _seed_by_item_id(ctx, ir)
+
+        ctx.confirm_skill(scope=SCOPE, item_id=item_id)
+        reloaded = ctx._find_skill_by_item_id(SCOPE, item_id)
+        assert reloaded is not None
+        assert reloaded.provenance.confidence == 1.0
+        assert reloaded.provenance.verified is True
+
+    def test_confirm_unknown_raises(self):
+        ctx = _ctx()
+        with pytest.raises(ValueError):
+            ctx.confirm_skill(scope=SCOPE, item_id="nope")
+
+    def test_confirm_emits_audit_event(self):
+        ctx = _ctx()
+        ir = _prompt_skill(name="CAudit", body="b")
+        item_id = _seed_by_item_id(ctx, ir)
+
+        ctx.confirm_skill(scope=SCOPE, item_id=item_id)
+        actions = {r.action for r in ctx.audit_log.records}
+        assert "skill_confirmed" in actions
+
+
+class TestSkillStatus:
+    def test_auto_generated_default(self):
+        ctx = _ctx()
+        ir = _prompt_skill(name="Auto", body="b")
+        item_id = _seed_by_item_id(ctx, ir)
+        item = ctx._find_skill_by_item_id(SCOPE, item_id)
+        assert item is not None
+        assert ctx.skill_status(item) == "auto-generated"
+
+    def test_edited_after_update(self):
+        ctx = _ctx()
+        ir = _prompt_skill(name="Ed", body="b")
+        item_id = _seed_by_item_id(ctx, ir)
+        ctx.update_skill(scope=SCOPE, item_id=item_id, name="Edited")
+        item = ctx._find_skill_by_item_id(SCOPE, item_id)
+        assert item is not None
+        assert ctx.skill_status(item) == "edited"
+
+    def test_confirmed_after_confirm(self):
+        ctx = _ctx()
+        ir = _prompt_skill(name="Conf", body="b")
+        item_id = _seed_by_item_id(ctx, ir)
+        ctx.confirm_skill(scope=SCOPE, item_id=item_id)
+        item = ctx._find_skill_by_item_id(SCOPE, item_id)
+        assert item is not None
+        assert ctx.skill_status(item) == "confirmed"
+
+    def test_string_content_without_status_is_auto(self):
+        ctx = _ctx()
+        item_id = _seed_string_content(ctx)
+        item = ctx._find_skill_by_item_id(SCOPE, item_id)
+        assert item is not None
+        assert ctx.skill_status(item) == "auto-generated"

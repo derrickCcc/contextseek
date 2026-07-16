@@ -41,12 +41,16 @@ import type {
   RetrieveRequest,
   RetrieveResponse,
   SeedResponse,
+  SkillConfirmRequest,
+  SkillConfirmResponse,
   SkillContextRequest,
   SkillContextResponse,
   SkillMdRequest,
   SkillMdResponse,
   SkillToolsRequest,
   SkillToolsResponse,
+  SkillUpdateRequest,
+  SkillUpdateResponse,
   StatusIdResponse,
   UpstreamRequest,
   UpstreamResponse,
@@ -187,6 +191,9 @@ export const ctx = {
   skillTools: (req: SkillToolsRequest) => post<SkillToolsResponse>("/skill_tools", req),
   skillContext: (req: SkillContextRequest) => post<SkillContextResponse>("/skill_context", req),
   skillMd: (req: SkillMdRequest) => post<SkillMdResponse>("/skill_md", req),
+  updateSkill: (req: SkillUpdateRequest) => put<SkillUpdateResponse>("/skill", req),
+  confirmSkill: (req: SkillConfirmRequest) =>
+    post<SkillConfirmResponse>("/skill/confirm", req),
   envVault: {
     items: () => get<EnvVaultItemsResponse>("/env-vault/items"),
     upsert: (req: EnvVaultUpsertRequest) =>

@@ -489,6 +489,35 @@ export interface SkillMdResponse {
   skills: SkillMdItem[];
 }
 
+// --- Skill editing & confirmation (Issue #40) ---
+
+export type SkillStatus = "auto-generated" | "edited" | "confirmed";
+
+export interface SkillUpdateRequest {
+  scope: string;
+  item_id: string;
+  name?: string;
+  description?: string;
+  body?: string;
+  parameters?: Record<string, unknown>;
+  tags?: string[];
+}
+
+export interface SkillConfirmRequest {
+  scope: string;
+  item_id: string;
+}
+
+export interface SkillUpdateResponse {
+  item: ContextItem;
+  status: SkillStatus;
+}
+
+export interface SkillConfirmResponse {
+  item: ContextItem;
+  status: "confirmed";
+}
+
 // --- Env Vault ---
 
 export interface EnvVaultItem {

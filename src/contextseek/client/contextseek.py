@@ -2102,6 +2102,158 @@ class ContextSeek:
             "relevance_boost": item.relevance_boost,
         }
 
+    # ------------------------------------------------------------------
+    # Skill editing & human confirmation (Issue #40)
+    # ------------------------------------------------------------------
+
+    def _find_skill_by_item_id(self, scope: str, item_id: str) -> ContextItem | None:
+        """Locate a skill-stage item by its ``ContextItem.id`` within a scope.
+
+        Unlike ``_find_skill_item`` (which matches by ``skill_id`` inside
+        dict-content), this works for **both** string-content and dict-content
+        skills, since ``item_id`` is always available.
+        """
+        for it in self.items(scope=scope, stage=Stage.skill):
+            if it.id == item_id:
+                return it
+        return None
+
+    def update_skill(
+        self,
+        *,
+        scope: str,
+        item_id: str,
+        name: str | None = None,
+        description: str | None = None,
+        body: str | None = None,
+        parameters: dict[str, Any] | None = None,
+        tags: list[str] | None = None,
+    ) -> ContextItem:
+        """Edit a skill's name, description, body, parameters, and tags.
+
+        Only fields that are **not** ``None`` are updated.  String-content
+        skills are upgraded to dict-content (SkillIR format) so the ``status``
+        field can be tracked.
+
+        After editing, ``content["status"]`` is set to ``"edited"`` and
+        ``item.updated_at`` is stamped, but provenance is **not** changed —
+        confidence / verified are only modified by :meth:`confirm_skill`.
+
+        Raises:
+            ValueError: when no skill with ``item_id`` exists in ``scope``.
+        """
+        from contextseek.domain.skill_ir import SkillIR
+
+        item = self._find_skill_by_item_id(scope, item_id)
+        if item is None:
+            raise ValueError(f"skill not found: {item_id}")
+
+        # Parse into SkillIR (handles both dict and string content)
+        ir = SkillIR.from_content(item.content)
+
+        if name is not None:
+            ir.name = name
+        if description is not None:
+            ir.description = description
+        if body is not None:
+            ir.body = body
+        if parameters is not None:
+            ir.parameters = parameters
+        if tags is not None:
+            ir.tags = tags
+
+        item.content = ir.to_content()
+        item.content["status"] = "edited"
+        item.updated_at = _utc_now()
+
+        ref = self.resolver.ref_for(scope, item.id)
+        self.adapter.write(ref, serialize_context_item(item))
+
+        self._emit_audit(
+            action="skill_updated",
+            scope=scope,
+            detail={
+                "item_id": item_id,
+                "updated_fields": [
+                    k
+                    for k, v in {
+                        "name": name,
+                        "description": description,
+                        "body": body,
+                        "parameters": parameters,
+                        "tags": tags,
+                    }.items()
+                    if v is not None
+                ],
+            },
+        )
+        return item
+
+    def confirm_skill(
+        self,
+        *,
+        scope: str,
+        item_id: str,
+    ) -> ContextItem:
+        """Human-confirm a skill.
+
+        Sets ``provenance.confidence = 1.0`` and ``provenance.verified = True``,
+        and marks ``content["status"] = "confirmed"``.  String-content skills
+        are upgraded to dict-content so the status field can be tracked.
+
+        Raises:
+            ValueError: when no skill with ``item_id`` exists in ``scope``.
+        """
+        from contextseek.domain.skill_ir import SkillIR
+
+        item = self._find_skill_by_item_id(scope, item_id)
+        if item is None:
+            raise ValueError(f"skill not found: {item_id}")
+
+        # Provenance is frozen=True — use dataclasses.replace
+        item.provenance = replace(
+            item.provenance, confidence=1.0, verified=True
+        )
+
+        # Ensure content is dict so we can store the status field
+        if not isinstance(item.content, dict):
+            ir = SkillIR.from_content(item.content)
+            item.content = ir.to_content()
+        item.content["status"] = "confirmed"
+
+        item.updated_at = _utc_now()
+
+        ref = self.resolver.ref_for(scope, item.id)
+        self.adapter.write(ref, serialize_context_item(item))
+
+        self._emit_audit(
+            action="skill_confirmed",
+            scope=scope,
+            detail={"item_id": item_id},
+        )
+        return item
+
+    def skill_status(self, item: ContextItem) -> str:
+        """Infer the human-facing status of a skill item.
+
+        Returns one of ``"auto-generated"``, ``"edited"``, ``"confirmed"``.
+
+        Priority:
+        1. Explicit ``content["status"]`` field (set by update_skill / confirm_skill)
+        2. ``provenance.verified`` → ``"confirmed"``
+        3. ``updated_at`` is not None → ``"edited"``
+        4. Fallback → ``"auto-generated"``
+        """
+        if isinstance(item.content, dict):
+            status = item.content.get("status")
+            if status in ("auto-generated", "edited", "confirmed"):
+                return status  # type: ignore[return-value]
+        if item.provenance.verified:
+            return "confirmed"
+        if item.updated_at is not None:
+            return "edited"
+        return "auto-generated"
+
     def dream(
         self,
         *,
