@@ -311,6 +311,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="initialize ~/.contextseek/: generate config.env, mcp.json, register system service",
     )
 
+    # doctor — config & connectivity self-check
+    subparsers.add_parser(
+        "doctor",
+        help="diagnose storage / embedding / LLM configuration and connectivity",
+    )
+
     # daemon
     daemon_parser = subparsers.add_parser("daemon", help="manage the background daemon")
     daemon_sub = daemon_parser.add_subparsers(dest="daemon_command", required=True)
@@ -499,6 +505,11 @@ def run_cli(
 
         run_init(pathlib.Path.home() / ".contextseek")
         return 0
+
+    if args.command == "doctor":
+        from contextseek.cli.doctor_cmd import run_doctor
+
+        return run_doctor(settings)
 
     if args.command == "daemon" and args.daemon_command in {"stop", "status"}:
         from contextseek.daemon.process import DaemonProcess
