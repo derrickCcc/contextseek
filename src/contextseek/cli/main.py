@@ -353,6 +353,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="detect format and count items without writing",
     )
 
+    # sync-obsidian
+    obsidian_parser = subparsers.add_parser(
+        "sync-obsidian",
+        help="incremental sync of an Obsidian vault (wikilinks → Link edges)",
+    )
+    obsidian_parser.add_argument("path", help="path to Obsidian vault root")
+    obsidian_parser.add_argument("--scope", default=None)
+    obsidian_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="detect changed files without writing",
+    )
+
     plug_replay_parser = subparsers.add_parser(
         "plug-outbox-replay", help="replay pending/failed PlugGateway outbox events"
     )
@@ -1204,6 +1217,60 @@ def run_cli(
             )
         else:
             print_success(f"done: added {report.added}  skipped {report.skipped}")
+        return 0
+
+    if args.command == "sync-obsidian":
+        from contextseek.plugs.obsidian import ObsidianVaultPlug
+        import pathlib as _opl
+
+        _vault = _opl.Path(args.path).expanduser()
+        _obs_scope = args.scope or "obsidian/vault"
+        subtitle = "dry-run" if args.dry_run else None
+        print_panel(
+            "ContextSeek sync-obsidian",
+            f"vault : {_vault}\nscope  : {_obs_scope}",
+            subtitle=subtitle,
+        )
+
+        plug = ObsidianVaultPlug(vault_path=_vault, scope=_obs_scope)
+
+        if args.dry_run:
+            # Consume stream to count changes without writing
+            events = list(plug.stream())
+            print_success(
+                f"dry-run: would import {plug.added} items "
+                f"({plug.skipped} unchanged, "
+                f"{len(plug.vanished_files)} deleted)"
+            )
+            return 0
+
+        # Consume the plug's stream via ctx.plug()
+        # We intercept to record item IDs for the sync state
+        events_to_process = list(plug.stream())
+        for event in events_to_process:
+            item = ctx.add(
+                event.content,
+                scope=_obs_scope,
+                source=event.source,
+                source_type="document",
+                tags=event.tags,
+                check_conflicts=False,
+            )
+            plug.record_item_id(event.source, item.id)
+
+        # Persist sync state
+        plug.persist_state()
+
+        # Resolve wikilinks → Link edges
+        links = plug.resolve_links(ctx)
+
+        # Handle deletes (soft-delete vanished files)
+        deletes = plug.handle_deletes(ctx)
+
+        print_success(
+            f"done: added {plug.added}  skipped {plug.skipped}  "
+            f"deleted {deletes}  links {links}"
+        )
         return 0
 
     return 1

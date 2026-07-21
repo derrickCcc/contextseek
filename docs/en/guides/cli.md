@@ -179,6 +179,8 @@ Features:
 |---------|----------|-------------|
 | `add` | `--content`(req) `--source` `--tags` | Write a context item, returns `{id, stage}` |
 | `retrieve` | `--query`(req) `--k`(10) `--full` `--json` `--tags` `--tag-match` | Ranked SearchHits; L1 summaries by default, `--full` for L0. `--tags a,b` filters by tag; `--tag-match all` (default) requires every tag, `any` requires at least one |
+| `sync` | `path`(req) `--scope` `--dry-run` | Import notes/documents from a file or directory (auto-detect format) |
+| `sync-obsidian` | `path`(req) `--scope` `--dry-run` | Incremental Obsidian vault sync: skips unchanged files, maps `[[wikilinks]]` to `Link` edges, soft-deletes vanished files |
 | `expand` | `--ids`(req, comma-separated) | Expand retrieved ids to L0 full content |
 | `items` | `--stage`(raw/extracted/knowledge/skill) | List all items in a scope |
 

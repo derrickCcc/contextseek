@@ -3,6 +3,7 @@
 __all__ = [
     "HermesSkillImporter",
     "MCPToolImporter",
+    "ObsidianVaultPlug",
     "OpenAIFunctionImporter",
     "PowerMemPlug",
     "PowerMemProxyPlug",
@@ -23,6 +24,10 @@ def __getattr__(name: str):
         from contextseek.plugs.rag import RAGPlug
 
         return RAGPlug
+    if name == "ObsidianVaultPlug":
+        from contextseek.plugs.obsidian import ObsidianVaultPlug
+
+        return ObsidianVaultPlug
     if name in {"HermesSkillImporter", "MCPToolImporter", "OpenAIFunctionImporter"}:
         from contextseek.plugs.skills import (
             HermesSkillImporter,
