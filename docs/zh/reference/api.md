@@ -114,7 +114,7 @@ ctx.plug(RAGPlug(results=my_rag_results), scope="acme/kb/general")
 
 ## 读取
 
-### `retrieve(query, *, scope, k=10, full=False, stage=None, tags=None, filters=None, include_deleted=False) → RetrieveResponse`
+### `retrieve(query, *, scope, k=10, full=False, stage=None, tags=None, tag_match='all', filters=None, include_deleted=False) → RetrieveResponse`
 
 排名语义检索，返回 `SearchHit` 的可迭代 `RetrieveResponse`。
 
@@ -127,8 +127,9 @@ ctx.plug(RAGPlug(results=my_rag_results), scope="acme/kb/general")
 | `k` | `10` | 最多返回命中数 |
 | `full` | `False` | `True` 返回 L0 正文；`False` 返回 L1 摘要 |
 | `stage` | `None` | 按 Stage 枚举值过滤 |
-| `tags` | `None` | AND 过滤：所有标签必须全部匹配 |
-| `filters` | `None` | 字典包：可含 `stage`、`tags`、`min_confidence` |
+| `tags` | `None` | 标签过滤列表，匹配方式由 `tag_match` 控制 |
+| `tag_match` | `'all'` | `'all'`：条目必须包含所有标签（AND）；`'any'`：至少匹配一个标签（OR） |
+| `filters` | `None` | 字典包：可含 `stage`、`tags`、`tag_match`、`min_confidence` |
 | `include_deleted` | `False` | 是否包含软删除条目 |
 
 **返回：** `RetrieveResponse` — 可用 `for hit in response` 遍历。每个 `hit`：

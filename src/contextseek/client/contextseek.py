@@ -18,7 +18,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable, Iterator
+from typing import TYPE_CHECKING, Any, Callable, Iterator, Literal
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 if TYPE_CHECKING:
@@ -565,6 +565,7 @@ class ContextSeek:
         full: bool = False,
         stage: Stage | None = None,
         tags: list[str] | None = None,
+        tag_match: Literal["all", "any"] = "all",
         filters: dict[str, Any] | None = None,
         include_deleted: bool = False,
         include_expired: bool = False,
@@ -586,8 +587,11 @@ class ContextSeek:
                 (default) L1 summaries replace content to save tokens—call
                 :meth:`expand` to upgrade to full text.
             stage: Optional stage filter.
-            tags: Optional tag filter (all tags must match).
-            filters: Compatibility bag; may include ``stage`` / ``tags`` / ``min_confidence``.
+            tags: Optional tag filter; ``tag_match`` controls matching semantics.
+            tag_match: Tag match mode — ``"all"`` (default) requires the item to
+                have *every* tag in ``tags``; ``"any"`` requires at least one.
+            filters: Compatibility bag; may include ``stage`` / ``tags`` /
+                ``tag_match`` / ``min_confidence``.
             include_deleted: Whether soft-deleted items are visible.
             include_expired: Whether items whose bi-temporal validity window has
                 closed (``valid_to`` in the past) are visible. Default False, so
@@ -599,12 +603,15 @@ class ContextSeek:
         """
         stage_filter = stage
         tag_filter = tags
+        tag_match_filter = tag_match
         min_conf = None
         if filters:
             if filters.get("stage"):
                 stage_filter = Stage(filters["stage"])
             if not tag_filter:
                 tag_filter = filters.get("tags")
+            if tag_match_filter == "all" and filters.get("tag_match"):
+                tag_match_filter = filters["tag_match"]
             min_conf = filters.get("min_confidence")
 
         prefix = self.resolver.prefix_for(scope)
@@ -633,6 +640,7 @@ class ContextSeek:
                 k=k,
                 stage=stage_filter,
                 tags=tag_filter,
+                tag_match=tag_match_filter,
                 include_deleted=include_deleted,
                 include_expired=include_expired,
                 geo_query=geo_query,
@@ -648,6 +656,7 @@ class ContextSeek:
                 k=k,
                 stage=stage_filter,
                 tags=tag_filter,
+                tag_match=tag_match_filter,
                 include_deleted=include_deleted,
                 include_expired=include_expired,
                 geo_query=geo_query,

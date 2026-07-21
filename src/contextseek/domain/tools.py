@@ -77,6 +77,18 @@ _RETRIEVE_SPEC = ToolSpec(
                 "description": "If true, return L0 full content instead of L1 summaries.",
                 "default": False,
             },
+            "tags": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Optional tag filter list.",
+                "default": [],
+            },
+            "tag_match": {
+                "type": "string",
+                "enum": ["all", "any"],
+                "description": "Tag match mode: 'all' requires every tag, 'any' requires at least one.",
+                "default": "all",
+            },
         },
         "required": ["query", "scope"],
     },

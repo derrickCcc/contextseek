@@ -115,7 +115,7 @@ See [DataPlugs](../guides/integrations/dataplugs.md) for available plug types.
 
 ## Read
 
-### `retrieve(query, *, scope, k=10, full=False, stage=None, tags=None, filters=None, include_deleted=False) → RetrieveResponse`
+### `retrieve(query, *, scope, k=10, full=False, stage=None, tags=None, tag_match='all', filters=None, include_deleted=False) → RetrieveResponse`
 
 Ranked semantic search. Returns a `RetrieveResponse` iterable of `SearchHit` objects.
 
@@ -128,8 +128,9 @@ By default returns **L1 summaries** (token-efficient). Pass `full=True` to recei
 | `k` | `10` | Maximum hits to return |
 | `full` | `False` | `True` → L0 bodies; `False` → L1 summaries (call `expand()` for L0) |
 | `stage` | `None` | Filter by `Stage` enum value |
-| `tags` | `None` | All listed tags must match (AND filter) |
-| `filters` | `None` | Dict bag: may include `stage`, `tags`, `min_confidence` |
+| `tags` | `None` | Tag filter list; matching controlled by `tag_match` |
+| `tag_match` | `'all'` | `'all'` — item must have every tag (AND); `'any'` — at least one tag (OR) |
+| `filters` | `None` | Dict bag: may include `stage`, `tags`, `tag_match`, `min_confidence` |
 | `include_deleted` | `False` | Whether soft-deleted items appear in results |
 
 **Returns:** `RetrieveResponse` — iterable as `for hit in response`. Each `hit` has:

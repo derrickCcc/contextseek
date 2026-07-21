@@ -61,6 +61,73 @@ class TestRetrieveResponse:
         assert [hit.item.id for hit in tagged_response] == [kept.id]
         assert {hit.item.id for hit in unfiltered_response} == {kept.id, other.id}
 
+    def test_tags_filter_any_matches_partial(self):
+        ctx = ContextSeek()
+        kept = ctx.add(
+            "database backup runbook",
+            scope="t/p",
+            source="cli",
+            tags=["ops", "database"],
+        )
+        other = ctx.add(
+            "database onboarding guide",
+            scope="t/p",
+            source="cli",
+            tags=["docs", "database"],
+        )
+
+        response = ctx.retrieve(
+            "database", scope="t/p", tags=["ops", "docs"], tag_match="any"
+        )
+
+        assert {hit.item.id for hit in response} == {kept.id, other.id}
+
+    def test_tags_filter_any_with_non_matching_tag(self):
+        ctx = ContextSeek()
+        kept = ctx.add(
+            "database backup runbook",
+            scope="t/p",
+            source="cli",
+            tags=["ops", "database"],
+        )
+        ctx.add(
+            "database onboarding guide",
+            scope="t/p",
+            source="cli",
+            tags=["docs", "database"],
+        )
+
+        response = ctx.retrieve(
+            "database", scope="t/p", tags=["ops", "nonexistent"], tag_match="any"
+        )
+
+        assert [hit.item.id for hit in response] == [kept.id]
+
+    def test_tag_match_defaults_to_all(self):
+        ctx = ContextSeek()
+        kept = ctx.add(
+            "database backup runbook",
+            scope="t/p",
+            source="cli",
+            tags=["ops", "database"],
+        )
+        ctx.add(
+            "database onboarding guide",
+            scope="t/p",
+            source="cli",
+            tags=["docs", "database"],
+        )
+
+        response_default = ctx.retrieve(
+            "database", scope="t/p", tags=["ops", "docs"]
+        )
+        response_explicit_all = ctx.retrieve(
+            "database", scope="t/p", tags=["ops", "docs"], tag_match="all"
+        )
+
+        assert [hit.item.id for hit in response_default] == []
+        assert [hit.item.id for hit in response_explicit_all] == []
+
 
 class TestExpand:
     def test_expand_returns_full_items_without_scope(self):

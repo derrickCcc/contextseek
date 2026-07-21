@@ -178,7 +178,7 @@ sync 会跳过写入时的冲突检测以保证批量导入速度；导入后用
 | 命令 | 关键参数 | 说明 |
 |------|----------|------|
 | `add` | `--content`(必填) `--source` `--tags` | 写入一条上下文，返回 `{id, stage}` |
-| `retrieve` | `--query`(必填) `--k`(10) `--full` `--json` `--tags` | 检索排序后的 SearchHit；默认 L1 摘要，`--full` 返回 L0 全文。`--tags a,b` 要求返回项同时包含列出的所有标签 |
+| `retrieve` | `--query`(必填) `--k`(10) `--full` `--json` `--tags` `--tag-match` | 检索排序后的 SearchHit；默认 L1 摘要，`--full` 返回 L0 全文。`--tags a,b` 按标签过滤；`--tag-match all`（默认）要求包含所有标签，`any` 只需匹配一个 |
 | `expand` | `--ids`(必填，逗号分隔) | 把已检索 id 升档到 L0 全文 |
 | `items` | `--stage`(raw/extracted/knowledge/skill) | 列举 scope 内全部 item |
 

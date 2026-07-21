@@ -72,6 +72,36 @@ def test_hits_tag_filter_requires_all_tags(tmp_path: Path) -> None:
     assert hits[0].item.id == vector_item_id
 
 
+def test_hits_tag_filter_any_semantics(tmp_path: Path) -> None:
+    with file_backend_demo_stack(tmp_path) as s:
+        ocean_item_id = s.item_ids[0]
+        vector_item_id = s.item_ids[1]
+        response = s.ctx.retrieve(
+            "分布式 向量",
+            scope=s.scope,
+            k=5,
+            filters={"tags": ["database", "vector"], "tag_match": "any"},
+        )
+    hits = list(response)
+    hit_ids = {h.item.id for h in hits}
+    assert ocean_item_id in hit_ids
+    assert vector_item_id in hit_ids
+
+
+def test_hits_tag_filter_any_single_tag(tmp_path: Path) -> None:
+    with file_backend_demo_stack(tmp_path) as s:
+        langchain_item_id = s.item_ids[2]
+        response = s.ctx.retrieve(
+            "embedding",
+            scope=s.scope,
+            k=5,
+            filters={"tags": ["embedding"], "tag_match": "any"},
+        )
+    hits = list(response)
+    assert len(hits) == 1
+    assert hits[0].item.id == langchain_item_id
+
+
 def test_response_meta_carries_layer(tmp_path: Path) -> None:
     with file_backend_demo_stack(tmp_path) as s:
         response = s.ctx.retrieve("LangChain", scope=s.scope, k=3)

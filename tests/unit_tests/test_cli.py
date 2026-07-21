@@ -84,6 +84,8 @@ class TestToolsOutput:
             "scope",
             "k",
             "full",
+            "tags",
+            "tag_match",
         }
         assert expand_tool["parameters"]["required"] == ["ids", "scope"]
         assert expand_tool["parameters"]["properties"]["ids"]["type"] == "array"
@@ -108,6 +110,8 @@ class TestToolsOutput:
             "scope",
             "k",
             "full",
+            "tags",
+            "tag_match",
         }
         assert expand_tool["input_schema"]["required"] == ["ids", "scope"]
         assert expand_tool["input_schema"]["properties"]["ids"]["items"] == {
@@ -159,8 +163,60 @@ class TestRetrieveTagFiltering:
         assert code == 0
         assert [item["id"] for item in payload["items"]] == [kept.id]
 
+    def test_retrieve_accepts_tag_match_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(
+            ["retrieve", "--scope", "t", "--query", "q", "--tags", "a,b", "--tag-match", "any"]
+        )
 
-class TestExpandOutput:
+        assert args.tag_match == "any"
+
+    def test_retrieve_tag_match_any_returns_items_with_any_tag(self) -> None:
+        ctx = ContextSeek()
+        kept_a = ctx.add(
+            "database backup runbook",
+            scope="t/p",
+            source="test",
+            tags=["ops", "database"],
+        )
+        kept_b = ctx.add(
+            "database onboarding guide",
+            scope="t/p",
+            source="test",
+            tags=["docs", "database"],
+        )
+        out = StringIO()
+
+        with redirect_stdout(out):
+            code = run_cli(
+                [
+                    "retrieve",
+                    "--scope",
+                    "t/p",
+                    "--query",
+                    "database",
+                    "--tags",
+                    "ops,docs",
+                    "--tag-match",
+                    "any",
+                    "--json",
+                ],
+                client=ctx,
+            )
+
+        payload = json.loads(out.getvalue())
+        assert code == 0
+        ids = {item["id"] for item in payload["items"]}
+        assert ids == {kept_a.id, kept_b.id}
+
+    def test_retrieve_tag_match_all_still_default(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(
+            ["retrieve", "--scope", "t", "--query", "q", "--tags", "a,b"]
+        )
+
+        assert args.tag_match == "all"
+
     def test_expand_reports_missing_ids(self) -> None:
         ctx = ContextSeek()
         item = ctx.add("expand target", scope="t/p", source="test")

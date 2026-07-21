@@ -174,6 +174,16 @@ class ContextSeekMCPServer:
                     "query": {"type": "string", "required": True},
                     "k": {"type": "integer", "default": 10},
                     "full": {"type": "boolean", "default": False},
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "default": [],
+                    },
+                    "tag_match": {
+                        "type": "string",
+                        "enum": ["all", "any"],
+                        "default": "all",
+                    },
                     "include_expired": {"type": "boolean", "default": False},
                     "include_trace": {"type": "boolean", "default": False},
                 },
@@ -329,6 +339,8 @@ class ContextSeekMCPServer:
                 scope=arguments["scope"],
                 k=arguments.get("k", 10),
                 full=bool(arguments.get("full", False)),
+                tags=arguments.get("tags") or None,
+                tag_match=arguments.get("tag_match", "all"),
                 include_expired=bool(arguments.get("include_expired", False)),
                 with_trace=bool(arguments.get("include_trace", False)),
             )

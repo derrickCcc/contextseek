@@ -97,7 +97,13 @@ def build_parser() -> argparse.ArgumentParser:
     retrieve_parser.add_argument(
         "--tags",
         default="",
-        help="comma-separated tag filter; returned items must contain all tags",
+        help="comma-separated tag filter (use --tag-match to control all/any semantics)",
+    )
+    retrieve_parser.add_argument(
+        "--tag-match",
+        choices=["all", "any"],
+        default="all",
+        help="tag match mode: 'all' requires every tag, 'any' requires at least one (default: all)",
     )
     retrieve_parser.add_argument(
         "--trace",
@@ -605,6 +611,7 @@ def run_cli(
                 k=args.k,
                 full=args.full,
                 tags=tags or None,
+                tag_match=args.tag_match,
                 with_trace=args.trace,
             )
         output = {

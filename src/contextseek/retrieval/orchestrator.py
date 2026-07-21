@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import math
 from time import perf_counter
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from contextseek.storage.protocol import SeekVFSAdapter
 from contextseek.config import RetrievalStrategy
@@ -125,6 +125,7 @@ class RetrievalOrchestrator:
         k: int,
         stage: Stage | None = None,
         tags: list[str] | None = None,
+        tag_match: Literal["all", "any"] = "all",
         include_deleted: bool = False,
         include_expired: bool = False,
         with_stats: bool = False,
@@ -139,7 +140,11 @@ class RetrievalOrchestrator:
             query: User query string.
             k: Maximum number of results to return.
             stage: Optional stage filter — only include items matching this stage.
-            tags: Optional tags filter — only include items having ALL these tags.
+            tags: Optional tags filter — only include items matching the tag
+                predicate controlled by ``tag_match``.
+            tag_match: Tag match mode — ``"all"`` (default) requires the item to
+                have *every* tag in ``tags``; ``"any"`` requires at least one
+                matching tag.
             include_deleted: Whether to include soft-deleted items.
             with_stats: If True, return (hits, stats) tuple.
             min_score: Optional threshold applied to the reranker's raw ``_score``
@@ -230,8 +235,13 @@ class RetrievalOrchestrator:
             if stage is not None and h.get("stage") != stage.value:
                 return False
             if tags:
-                if not set(tags).issubset(set(h.get("tags") or [])):
-                    return False
+                item_tags = set(h.get("tags") or [])
+                if tag_match == "any":
+                    if set(tags).isdisjoint(item_tags):
+                        return False
+                else:  # "all" (default)
+                    if not set(tags).issubset(item_tags):
+                        return False
             return True
 
         ranked_streams = [
