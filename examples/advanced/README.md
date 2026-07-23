@@ -76,6 +76,24 @@ uv run python examples/advanced/powermem_minimal.py
 
 ---
 
+## self_evolution_demo.py — 自演进四特性演示
+
+```bash
+uv run python examples/advanced/self_evolution_demo.py
+```
+
+**依赖：** 仅项目本身，无需额外安装。
+
+场景：在内存后端上演示 ContextSeek 自演进引擎的四个核心特性。
+
+演示：
+- 冲突检测与双时态有效期（新证据覆盖旧证据，旧条目自动退役）
+- Drift 隔离（偏离当前共识的条目被标记隔离，不参与召回）
+- 效用反馈循环（"use it or lose it"——长期未被检索的条目降权）
+- 失败驱动反思（`PitfallReflector` 从失败 trace 中提取规则）
+
+---
+
 ## powermem_plug.py — PowerMem DataPlug 完整演示
 
 ```bash

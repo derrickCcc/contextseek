@@ -64,6 +64,10 @@ pip install "contextseek[langchain]"
 
 ## langchain_deepagents_example.py — LangChain + DeepAgents 集成示例
 
+**依赖：** 需要 `OPENAI_API_KEY` 环境变量 + `contextseek[langchain]` extras。
+
+> 此示例执行真实 LLM 调用（ChatOpenAI），不是零外部依赖示例。
+
 ```bash
 uv run python examples/basic/langchain_deepagents_example.py
 ```
