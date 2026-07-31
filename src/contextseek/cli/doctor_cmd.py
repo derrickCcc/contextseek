@@ -69,6 +69,7 @@ def _sanitize_error_message(msg: str, *, max_len: int = 200) -> str:
 # Error classification
 # ---------------------------------------------------------------------------
 
+
 def _classify_exception(exc: Exception, component: str) -> tuple[str, str, str]:
     """Return (message, hint, env_section) for a caught exception.
 
@@ -110,7 +111,11 @@ def _classify_exception(exc: Exception, component: str) -> tuple[str, str, str]:
                 f"Missing LangChain package: {pkg_hint}",
                 f"section {'2' if component == 'embedding' else '3'}",
             )
-        return (short, "Install the missing dependency", f"section {'2' if component == 'embedding' else '3'}")
+        return (
+            short,
+            "Install the missing dependency",
+            f"section {'2' if component == 'embedding' else '3'}",
+        )
 
     # --- Authentication ---
     raw_lower = raw.lower()
@@ -124,8 +129,16 @@ def _classify_exception(exc: Exception, component: str) -> tuple[str, str, str]:
         or "403" in raw_lower
     ):
         if component == "embedding":
-            return (short, "Set the correct API key (e.g. OPENAI_API_KEY) in .env", "section 2")
-        return (short, "Set the correct API key (e.g. OPENAI_API_KEY) in .env", "section 3")
+            return (
+                short,
+                "Set the correct API key (e.g. OPENAI_API_KEY) in .env",
+                "section 2",
+            )
+        return (
+            short,
+            "Set the correct API key (e.g. OPENAI_API_KEY) in .env",
+            "section 3",
+        )
 
     # --- Connection / network ---
     if (
@@ -137,19 +150,39 @@ def _classify_exception(exc: Exception, component: str) -> tuple[str, str, str]:
         or "network" in raw_lower
     ):
         if component == "storage":
-            return (short, "Check that the storage service is running and host/port are correct", "section 1 / 1.0 / 1.1")
+            return (
+                short,
+                "Check that the storage service is running and host/port are correct",
+                "section 1 / 1.0 / 1.1",
+            )
         if component == "embedding":
-            return (short, "Check EMBEDDING_BASE_URL and network connectivity", "section 2")
+            return (
+                short,
+                "Check EMBEDDING_BASE_URL and network connectivity",
+                "section 2",
+            )
         return (short, "Check LLM_BASE_URL and network connectivity", "section 3")
 
     # --- Configuration / value errors ---
     if isinstance(exc, ValueError):
         if "dims" in raw_lower or "embedding_dims" in raw_lower:
-            return (short, "Set EMBEDDING_DIMS when using oceanbase backend", "section 1.1 / 2")
+            return (
+                short,
+                "Set EMBEDDING_DIMS when using oceanbase backend",
+                "section 1.1 / 2",
+            )
         if "unknown" in raw_lower and "provider" in raw_lower:
             if component == "embedding":
-                return (short, "Check EMBEDDING_PROVIDER spelling; see supported providers", "section 2")
-            return (short, "Check LLM_PROVIDER spelling; see supported providers", "section 3")
+                return (
+                    short,
+                    "Check EMBEDDING_PROVIDER spelling; see supported providers",
+                    "section 2",
+                )
+            return (
+                short,
+                "Check LLM_PROVIDER spelling; see supported providers",
+                "section 3",
+            )
         return (short, "Check configuration values in .env", "section 1 / 2 / 3")
 
     # --- Generic fallback ---
@@ -159,6 +192,7 @@ def _classify_exception(exc: Exception, component: str) -> tuple[str, str, str]:
 # ---------------------------------------------------------------------------
 # Individual checks
 # ---------------------------------------------------------------------------
+
 
 def _check_storage(settings: ContextSeekSettings) -> CheckResult:
     """Build and initialise the storage backend to verify connectivity."""
@@ -265,7 +299,9 @@ def _check_storage(settings: ContextSeekSettings) -> CheckResult:
 def _check_embedding(settings: ContextSeekSettings) -> CheckResult:
     """Build embedder and do a tiny probe call."""
     emb_settings = settings.embedding
-    provider = emb_settings.provider.strip().lower() if emb_settings.provider else "none"
+    provider = (
+        emb_settings.provider.strip().lower() if emb_settings.provider else "none"
+    )
 
     if provider in {"", "none"}:
         return CheckResult(
@@ -332,14 +368,16 @@ def _check_embedding(settings: ContextSeekSettings) -> CheckResult:
     return CheckResult(
         PASS,
         "embedding",
-        f"embedder returned {actual_dims}-dim vector for probe \"test\"",
+        f'embedder returned {actual_dims}-dim vector for probe "test"',
     )
 
 
 def _check_llm(settings: ContextSeekSettings) -> CheckResult:
     """Build LLM and do a tiny invoke call."""
     llm_settings = settings.llm
-    provider = llm_settings.provider.strip().lower() if llm_settings.provider else "none"
+    provider = (
+        llm_settings.provider.strip().lower() if llm_settings.provider else "none"
+    )
 
     if provider in {"", "none"}:
         return CheckResult(
@@ -405,8 +443,14 @@ def _check_cross(
     warnings: list[CheckResult] = []
 
     backend_name = settings.storage.backend
-    emb_provider = settings.embedding.provider.strip().lower() if settings.embedding.provider else "none"
-    llm_provider = settings.llm.provider.strip().lower() if settings.llm.provider else "none"
+    emb_provider = (
+        settings.embedding.provider.strip().lower()
+        if settings.embedding.provider
+        else "none"
+    )
+    llm_provider = (
+        settings.llm.provider.strip().lower() if settings.llm.provider else "none"
+    )
 
     # seekdb + no external embedder
     if backend_name == "seekdb" and emb_provider in {"", "none"}:
@@ -439,6 +483,7 @@ def _check_cross(
 # Configuration report (no side effects)
 # ---------------------------------------------------------------------------
 
+
 def _describe_storage(settings: ContextSeekSettings) -> str:
     """Human-readable description of the resolved storage config (no secrets)."""
     s = settings.storage
@@ -448,7 +493,9 @@ def _describe_storage(settings: ContextSeekSettings) -> str:
     if backend == "seekdb":
         seekdb = settings.seekdb
         if seekdb.host:
-            return f"seekdb (host={seekdb.host}:{seekdb.port}, database={seekdb.database})"
+            return (
+                f"seekdb (host={seekdb.host}:{seekdb.port}, database={seekdb.database})"
+            )
         return f"seekdb embedded (path={seekdb.path}, database={seekdb.database})"
     if backend == "oceanbase":
         ob = settings.ob
@@ -546,6 +593,7 @@ def _render_summary(results: list[CheckResult]) -> int:
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def run_doctor(settings: ContextSeekSettings) -> int:
     """Run the doctor diagnostics and return an exit code.

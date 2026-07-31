@@ -416,7 +416,7 @@ class TestDoctor:
         monkeypatch.setenv("EMBEDDING_PROVIDER", "openai")
 
         monkeypatch.setattr(
-            "contextseek.cli.doctor_cmd.build_embedder", lambda s: (lambda t: None)
+            "contextseek.cli.doctor_cmd.build_embedder", lambda s: lambda t: None
         )
         code = run_cli(["doctor"])
         out = capsys.readouterr().out
@@ -555,9 +555,7 @@ class TestDoctor:
         def _fake_check_llm(settings):
             return CheckResult(PASS, "llm", "LLM responded")
 
-        monkeypatch.setattr(
-            "contextseek.cli.doctor_cmd._check_llm", _fake_check_llm
-        )
+        monkeypatch.setattr("contextseek.cli.doctor_cmd._check_llm", _fake_check_llm)
         code = run_cli(["doctor"])
         out = capsys.readouterr().out
 
@@ -574,7 +572,7 @@ class TestDoctor:
 
         monkeypatch.setattr(
             "contextseek.cli.doctor_cmd.build_embedder",
-            lambda s: (lambda t: [0.1, 0.2]),
+            lambda s: lambda t: [0.1, 0.2],
         )
 
         class _FakeLLM:
